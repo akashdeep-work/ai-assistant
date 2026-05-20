@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     KAFKA_PROMPT_REQUEST_TOPIC:str
     KAFKA_PROMPT_RESPONSE_TOPIC:str
     REDIS_URL:str
+    OLLAMA_BASE_URL:str
 
     model_config = SettingsConfigDict(env_file=".env",extra="ignore")
 
