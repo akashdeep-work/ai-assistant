@@ -9,6 +9,7 @@ from langchain_core.messages import BaseMessage, SystemMessage, ToolMessage
 from operator import add as add_messages
 import faiss
 from langchain_community.docstore.in_memory import InMemoryDocstore
+import os
 
 class AgentState(TypedDict):
     message: Annotated[Sequence[BaseMessage], add_messages]
@@ -20,14 +21,24 @@ class AiAssistant:
         # 1. Use a dedicated embedding model (ensure you run `ollama pull nomic-embed-text`)
         self.embedding = OllamaEmbeddings(model='nomic-embed-text')
         
-        # 2. Initialize Vector Store
-        index = faiss.IndexFlatL2(len(self.embedding.embed_query("hello world")))
-        self.vector_store = FAISS(
-            embedding_function=self.embedding,
-            index=index, 
-            docstore=InMemoryDocstore(), 
-            index_to_docstore_id={}
-        )
+        self.index_path = "faiss_db_store"
+
+        if os.path.exists(self.index_path):
+            #load faiss db from local path
+            self.vector_store = FAISS.load_local(
+                folder_path=self.index_path, 
+                embeddings=self.embedding, 
+                allow_dangerous_deserialization=True
+            )
+        else:
+            # 2. Initialize Vector Store
+            index = faiss.IndexFlatL2(len(self.embedding.embed_query("hello world")))
+            self.vector_store = FAISS(
+                embedding_function=self.embedding,
+                index=index, 
+                docstore=InMemoryDocstore(), 
+                index_to_docstore_id={}
+            )
         self.retriever = self.vector_store.as_retriever(search_kwargs={'k': 5})
         
         # 3. Create the tool using LangChain's native function (avoids 'self' bugs)
@@ -49,6 +60,7 @@ class AiAssistant:
     def ingest_documents(self, texts: list[str]):
         """Call this method to actually put data into your vector store."""
         self.vector_store.add_texts(texts)
+        self.vector_store.save_local(self.index_path)
 
     def should_continue(self, state: AgentState) -> str:
         last_message = state['message'][-1]
