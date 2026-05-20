@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings,SettingsConfigDict
 class Settings(BaseSettings):
     APP_NAME:str
     HOST:str
-    PORT:str
+    PORT:int
     APP_VERSION:str
     KAFKA_BOOTSTARP_SERVER:str
     KAFKA_PROMPT_REQUEST_TOPIC:str

@@ -10,7 +10,7 @@ from operator import add as add_messages
 import faiss
 from langchain_community.docstore.in_memory import InMemoryDocstore
 import os
-
+from app.config import settings
 class AgentState(TypedDict):
     message: Annotated[Sequence[BaseMessage], add_messages]
 
@@ -18,8 +18,9 @@ system_prompt = "You are a helpful AI assistant with access to a knowledge base.
 
 class AiAssistant:
     def __init__(self):
+        ollama_url = settings.OLLAMA_BASE_URL
         # 1. Use a dedicated embedding model (ensure you run `ollama pull nomic-embed-text`)
-        self.embedding = OllamaEmbeddings(model='nomic-embed-text')
+        self.embedding = OllamaEmbeddings(model='nomic-embed-text', base_url=ollama_url)
         
         self.index_path = "faiss_db_store"
 
@@ -50,7 +51,7 @@ class AiAssistant:
         self.tools = [self.retriever_tool]
         
         # 4. Initialize and bind LLM
-        self.llm = ChatOllama(model="llama3.1", temperature=0)
+        self.llm = ChatOllama(model="llama3.1", temperature=0, base_url=ollama_url)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         
         # 5. Build Graph

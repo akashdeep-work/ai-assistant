@@ -6,9 +6,6 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app:FastAPI):
-    # rag_agent = AiAssistant()
-    # yield {"rag_agent":rag_agent}
-    # del rag_agent
     yield
 
 

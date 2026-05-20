@@ -1,0 +1,65 @@
+from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+import asyncio
+import json
+import os
+from dotenv import load_dotenv
+from langchain_core.messages import HumanMessage
+from ai_assistant import AiAssistant
+from app.utils.logger import logger
+
+load_dotenv()
+
+KAFKA_SERVER = os.getenv("KAFKA_BOOTSTARP_SERVER","localhost:9092")
+PROMPT_TOPIC = os.getenv("KAFKA_PROMPT_REQUEST_TOPIC","llm_prompt_request")
+RESPONSE_TOPIC = os.getenv("KAFKA_PROMPT_RESPONSE_TOPIC","llm_prompt_response")
+
+
+async def handle_chat_stream(payload:dict,producer:AIOKafkaProducer,aiassistant:AiAssistant):
+    request_id = payload.get("request_id")
+    prompt = payload.get("prompt")
+    thread_id = payload.get("thread_id",request_id)
+    
+    config = {"configurable":{"thread_id":thread_id}}
+    state_update = {"messages":[HumanMessage(content=prompt)]}
+    async for event in aiassistant.rag_agent.astream(input=state_update,config=config,stream_mode="messages"):
+        message_chunk, metadata = event
+        if metadata.get("langgraph_node") == "llm" and message_chunk.content:
+            response = {"request_id":request_id,"status":"streaming","text":message_chunk.content}
+            await producer.send_and_wait(RESPONSE_TOPIC,json.dumps(response).encode("utf-8"))
+
+    response = {"request_id":request_id,"status":"done"}
+    await producer.send_and_wait(RESPONSE_TOPIC,json.dumps(response).encode("utf-8"))
+
+
+
+async def main():
+    aiassistant = AiAssistant()
+
+    consumer = AIOKafkaConsumer(PROMPT_TOPIC,bootstrap_servers=KAFKA_SERVER,group_id="ai-worker")
+    producer = AIOKafkaProducer(bootstrap_servers=KAFKA_SERVER)
+
+    await consumer.start()
+    await producer.start()
+    logger.info(f"worker started listening to {PROMPT_TOPIC}")
+
+    try:
+        async for msg in consumer:
+            try:
+                payload = json.loads(msg.value.decode('utf-8'))
+                task_type = payload.get("task_type")
+                if task_type == "chat_stream":
+                    await handle_chat_stream(payload,producer,aiassistant)
+
+            except json.JSONDecodeError:
+                logger.info(f"received melform json data in {msg.value}")
+            except Exception as e:
+                logger.info(f"task fail: {e}")
+
+    finally:
+        await consumer.stop()
+        await producer.stop()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
