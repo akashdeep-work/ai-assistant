@@ -3,6 +3,8 @@ import json
 from app.utils.logger import logger
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 import redis.asyncio as aioredis
+import sqlite3
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 
 class ChatMessagingService:
@@ -14,7 +16,7 @@ class ChatMessagingService:
 
         self.kafka_producer = None
         self.redis_client = None
-        self._consumer_task = None
+        self.checkpointer = None
 
     async def start(self):
         self.kafka_producer = AIOKafkaProducer(bootstrap_servers=self.kafka_server)
@@ -22,36 +24,18 @@ class ChatMessagingService:
 
         await self.kafka_producer.start()
 
-        self._consumer_task = asyncio.create_task(self._kafka_response_dispatcher())
-
+        con = sqlite3.connect("checkpoints.sqlite", check_same_thread=False)
+        self.checkpointer = SqliteSaver(con)
         logger.info("Chat message service started")
 
     async def stop(self):
         if self.kafka_producer:
             await self.kafka_producer.stop()
-        if self._consumer_task:
-            self._consumer_task.cancel()
         if self.redis_client:
             await self.redis_client.close()
         
         logger.info("Chat message service stopped")
 
-    async def _kafka_response_dispatcher(self):
-        consumer = AIOKafkaConsumer(self.response_topic,bootstrap_servers=self.kafka_server,group_id="api-streamers")
-
-        await consumer.start()
-
-        try:
-            async for msg in consumer:
-                data = json.loads(msg.value.decode('utf-8'))
-                req_id = data.get('request_id')
-                if req_id:
-                    await self.redis_client.publish(f"stream:{req_id}",json.dumps(data))
-
-        except asyncio.CancelledError:
-            pass
-        finally:
-            await consumer.stop()
 
     async def publish_prompt(self,request_id:str,prompt:str):
         payload = {"request_id":request_id,"prompt":prompt}

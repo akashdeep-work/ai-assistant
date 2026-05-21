@@ -11,6 +11,9 @@ import faiss
 from langchain_community.docstore.in_memory import InMemoryDocstore
 import os
 from app.config import settings
+import sqlite3
+from langgraph.checkpoint.sqlite import SqliteSaver
+
 class AgentState(TypedDict):
     message: Annotated[Sequence[BaseMessage], add_messages]
 
@@ -54,6 +57,10 @@ class AiAssistant:
         self.llm = ChatOllama(model="llama3.1", temperature=0, base_url=ollama_url)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         
+        db_file = "checkpoints.sqlite"
+        self.conn = sqlite3.connect(db_file,check_same_thread=False)
+        self.memory = SqliteSaver(self.conn)
+
         # 5. Build Graph
         self.graph = StateGraph(AgentState)
         self._create_graph()
@@ -106,5 +113,4 @@ class AiAssistant:
         self.graph.set_entry_point("llm")
         
         # Add checkpointer for API memory handling
-        memory = MemorySaver()
-        self.rag_agent = self.graph.compile(checkpointer=memory)
+        self.rag_agent = self.graph.compile(checkpointer=self.memory)
