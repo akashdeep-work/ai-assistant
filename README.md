@@ -1,4 +1,4 @@
-#🤖 AI Assistant Microservices Architecture
+🤖 AI Assistant Microservices Architecture
 An event-driven, production-ready AI Assistant platform built with FastAPI, LangGraph, Apache Kafka (KRaft mode), and Redis.
 
 This project implements a Zero-Footprint, High-Performance Separation of Concerns Strategy: the FastAPI web server handles lightweight database tracking and user connections, while a detached background worker process handles heavy AI graph calculations and LLM processing via Ollama.
