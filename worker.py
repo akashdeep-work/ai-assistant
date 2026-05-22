@@ -10,7 +10,7 @@ import redis.asyncio as aioredis
 
 load_dotenv()
 
-KAFKA_SERVER = os.getenv("KAFKA_BOOTSTARP_SERVER","localhost:9092")
+KAFKA_SERVER = os.getenv("KAFKA_BOOTSTARP_SERVER","kafka:29092")
 PROMPT_TOPIC = os.getenv("KAFKA_PROMPT_REQUEST_TOPIC","llm_prompt_request")
 RESPONSE_TOPIC = os.getenv("KAFKA_PROMPT_RESPONSE_TOPIC","llm_prompt_response")
 REDIS_URL = os.getenv("REDIS_URL","redis://localhost:6379/0")

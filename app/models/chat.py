@@ -20,6 +20,6 @@ class MessageDetails(BaseModel):
     role: str = Field(description="The sender role: 'user', 'assistant', 'system', or 'tool'.")
     content: str = Field(description="The text content or output data of the message.")
 
-class ChatMessageResponse(BaseModel):
+class ChatMessagesResponse(BaseModel):
     thread_id:str
     messages:List[MessageDetails]

@@ -10,9 +10,13 @@ from operator import add as add_messages
 import faiss
 from langchain_community.docstore.in_memory import InMemoryDocstore
 import os
-from app.config import settings
 import sqlite3
 from langgraph.checkpoint.sqlite import SqliteSaver
+from dotenv import load_dotenv
+
+load_dotenv()
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL","http://host.docker.internal:11434")
 
 class AgentState(TypedDict):
     message: Annotated[Sequence[BaseMessage], add_messages]
@@ -21,7 +25,7 @@ system_prompt = "You are a helpful AI assistant with access to a knowledge base.
 
 class AiAssistant:
     def __init__(self):
-        ollama_url = settings.OLLAMA_BASE_URL
+        ollama_url = OLLAMA_BASE_URL
         # 1. Use a dedicated embedding model (ensure you run `ollama pull nomic-embed-text`)
         self.embedding = OllamaEmbeddings(model='nomic-embed-text', base_url=ollama_url)
         

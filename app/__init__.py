@@ -30,5 +30,9 @@ def createApp()-> FastAPI:
 
     api_prefix = "/v1/api"
 
-    app.include_router(chat_router,api_prefix)
+    @app.get("/health_check")
+    def health_check():
+        return {"status":"OK"}
+
+    app.include_router(chat_router,prefix=api_prefix)
     return app

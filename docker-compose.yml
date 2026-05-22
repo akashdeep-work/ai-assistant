@@ -14,10 +14,25 @@ services:
     environment:
       - KAFKA_NODE_ID=1
       - KAFKA_PROCESS_ROLES=broker,controller
-      - KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      
+      # 1. Define two listeners: CLIENT (for other containers) and EXTERNAL (for your host machine)
+      - KAFKA_LISTENERS=CLIENT://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      
+      # 2. Tell Kafka to advertise 'kafka:29092' inside the docker network
+      - KAFKA_ADVERTISED_LISTENERS=CLIENT://kafka:29092,EXTERNAL://localhost:9092
+      
+      # 3. Map these listener names to the standard PLAINTEXT security protocol
+      - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CLIENT:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      
       - KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093
       - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_INTER_BROKER_LISTENER_NAME=CLIENT
+      
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
 
   api:
     build:
@@ -28,7 +43,7 @@ services:
       - "${PORT}:${PORT}"
 
     volumes:
-      - ./checkpoints.sqlite:/app/checkpoints.sqlite
+      - .:/app
 
     environment:
       # Passing variables from .env into the container
@@ -42,8 +57,11 @@ services:
       - REDIS_URL
       - OLLAMA_BASE_URL
     depends_on:
-      - redis
-      - kafka
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      
 
   worker:
     build:
@@ -53,7 +71,7 @@ services:
       - "host.docker.internal:host-gateway"
 
     volumes:
-      - ./checkpoints.sqlite:/app/checkpoints.sqlite
+      - .:/app
       
     environment:
       # Passing variables from .env into the container
@@ -62,4 +80,7 @@ services:
       - KAFKA_PROMPT_RESPONSE_TOPIC
       - OLLAMA_BASE_URL
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_started

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from aiokafka.errors import KafkaConnectionError
 from app.utils.logger import logger
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 import redis.asyncio as aioredis
@@ -22,7 +23,21 @@ class ChatMessagingService:
         self.kafka_producer = AIOKafkaProducer(bootstrap_servers=self.kafka_server)
         self.redis_client = aioredis.from_url(self.redis_url)
 
-        await self.kafka_producer.start()
+        max_retries = 5
+        retry_delay = 5  # seconds
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"[Kafka] Connection attempt {attempt}/{max_retries} to {self.kafka_server}...")
+                await self.kafka_producer.start()
+                logger.info("[Kafka] Successfully connected and bootstrapped!")
+                break
+            except KafkaConnectionError as e:
+                if attempt == max_retries:
+                    logger.info(f"[Kafka] Fatal: Could not connect after {max_retries} attempts.")
+                    raise e
+                logger.info(f"[Kafka] Connection refused. Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
 
         con = sqlite3.connect("checkpoints.sqlite", check_same_thread=False)
         self.checkpointer = SqliteSaver(con)

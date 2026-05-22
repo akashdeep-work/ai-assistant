@@ -1,33 +1,29 @@
-import torch
-from torch.utils.data import Dataset
-from PIL import Image
-import os
-import torch.nn as nn
-import torch.nn.functional as F
+import pytest
+from fastapi.testclient import TestClient
+from main import app
+import sqlite3
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langchain_core.messages import HumanMessage, AIMessage
 
-class MyFirstDataset(Dataset):
-    def __init__(self, folder_path, transform=None):
-        self.folder_path = folder_path
-        self.transform = transform
-        self.image_filenames = os.listdir(folder_path)
+client = TestClient(app=app)
 
-    def __len__(self):
-        return len(self.image_filenames)
-    
-    def __getitem__(self, idx):
-        img_name = self.image_filenames[idx]
-        img_path = os.path.join(self.folder_path,img_name)
+@pytest.fixture(autouse=True)
+def setup_db():
+    conn = sqlite3.connect("checkpoints.sqlite")
+    cursor = SqliteSaver(conn=conn)
 
-        image = Image.open(img_path).convert('RGB')
+    yield
 
-        if self.transform:
-            image = self.transform(image)
-        return image, 0 if img_name.lower().startswith('cat') else 1
-    
+    conn.close()
+
+def test_api_health():
+    response = client.get("/health_check")
+    assert response.status_code == 200 and response.json()["status"] == "OK"
 
 
-# class MyFirstCNN(nn.Module):
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-
-#         self.cnn = 
+def test_api_all_chats():
+    with client:
+        response = client.post("/v1/api/chats/all",json={"thread_ids":["id1_non","id2_non"]})
+        assert response.status_code == 200
+        assert "chats" in response.json()
+        assert len(response.json()["chats"]) == 0
