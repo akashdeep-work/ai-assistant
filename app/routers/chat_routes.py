@@ -1,8 +1,11 @@
-from fastapi import APIRouter,Depends, HTTPException
-from app.models.chat import AllChatsListRequest,AllChatListResponse,ChatMessagesResponse
+from fastapi import APIRouter,Depends, HTTPException, BackgroundTasks
+from app.models.chat import AllChatsListRequest,AllChatListResponse,ChatMessagesResponse, ChatMessageRequest
 from app.dependencies import get_messaging_service
 from app.services.message_service import ChatMessagingService
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage 
+import json
+import uuid
+from fastapi.responses import StreamingResponse
 
 router = APIRouter(prefix="/chats",tags=["chats"])
 
@@ -24,7 +27,7 @@ async def get_all_chats(request:AllChatsListRequest, messaging:ChatMessagingServ
 
     return {"chats": preview}
 
-@router.post("/{thread_id}",response_model=ChatMessagesResponse)
+@router.get("/{thread_id}",response_model=ChatMessagesResponse)
 async def get_chat_by_thread(thread_id:str, messaging:ChatMessagingService=Depends(get_messaging_service)):
     
     config = {"configurable":{"thread_id":id}}
@@ -53,3 +56,20 @@ async def get_chat_by_thread(thread_id:str, messaging:ChatMessagingService=Depen
 
     return {"thread_id":thread_id,"messages":formatted_messages}
     
+
+@router.post("/query")
+async def get_all_chats(request:ChatMessageRequest, background_tasks:BackgroundTasks, messaging:ChatMessagingService=Depends(get_messaging_service)):
+    thread_id = request.thread_id
+    prompt = request.prompt
+    request_id = str(uuid.uuid4())
+
+    payload = {
+        "task_type":"chat_stream",
+        "thread_id":thread_id,
+        "prompt":prompt,
+        "request_id":request_id
+    }
+
+    background_tasks(messaging.kafka_producer.send_and_wait,messaging.prompt_topic,json.dumps(payload).encode("utf-8"))
+
+    return StreamingResponse(messaging.yield_stream(request_id=request_id),media_type="text/event-stream")
