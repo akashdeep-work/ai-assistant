@@ -73,6 +73,7 @@ async def main():
         await consumer.stop()
         await producer.stop()
         await redis_client.close()
+        await aiassistant.close()
 
 
 if __name__ == "__main__":

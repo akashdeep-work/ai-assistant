@@ -76,7 +76,10 @@ class AiAssistant:
         await self.memory.setup()
         
         self.rag_agent = self.graph.compile(checkpointer=self.memory)
-
+    async def close(self):
+        """Cleanly releases database resources."""
+        if self.db_conn:
+            await self.db_conn.close()
     def ingest_documents(self, texts: list[str]):
         """Call this method to actually put data into your vector store."""
         self.vector_store.add_texts(texts)

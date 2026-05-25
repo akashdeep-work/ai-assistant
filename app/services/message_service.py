@@ -42,7 +42,7 @@ class ChatMessagingService:
 
         self.db_conn = await aiosqlite.connect("checkpoints.sqlite", check_same_thread=False)
         self.checkpointer = AsyncSqliteSaver(self.db_conn)
-        self.checkpointer.setup()
+        await self.checkpointer.setup()
         logger.info("Chat message service started")
 
     async def stop(self):
