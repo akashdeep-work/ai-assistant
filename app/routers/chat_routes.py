@@ -1,4 +1,4 @@
-from fastapi import APIRouter,Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter,Depends, HTTPException, BackgroundTasks, File, UploadFile
 from app.models.chat import AllChatsListRequest,AllChatListResponse,ChatMessagesResponse, ChatMessageRequest
 from app.dependencies import get_messaging_service
 from app.services.message_service import ChatMessagingService
@@ -6,6 +6,9 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 import json
 import uuid
 from fastapi.responses import StreamingResponse
+import os
+import shutil
+from app.config import settings
 
 router = APIRouter(prefix="/chats",tags=["chats"])
 
@@ -58,13 +61,13 @@ async def get_chat_by_thread(thread_id:str, messaging:ChatMessagingService=Depen
     
 
 @router.post("/query")
-async def get_all_chats(request:ChatMessageRequest, background_tasks:BackgroundTasks, messaging:ChatMessagingService=Depends(get_messaging_service)):
+async def user_query(request:ChatMessageRequest, background_tasks:BackgroundTasks, messaging:ChatMessagingService=Depends(get_messaging_service)):
     thread_id = request.thread_id
     prompt = request.prompt
     request_id = str(uuid.uuid4())
 
     payload = {
-        "task_type":"chat_stream",
+        "task_type":settings.TaskType.CHAT_STREAM,
         "thread_id":thread_id,
         "prompt":prompt,
         "request_id":request_id
@@ -73,3 +76,30 @@ async def get_all_chats(request:ChatMessageRequest, background_tasks:BackgroundT
     background_tasks(messaging.kafka_producer.send_and_wait,messaging.prompt_topic,json.dumps(payload).encode("utf-8"))
 
     return StreamingResponse(messaging.yield_stream(request_id=request_id),media_type="text/event-stream")
+
+@router.post("/upload")
+async def upload_file(background_tasks:BackgroundTasks, file:UploadFile = File(...), messaging:ChatMessagingService=Depends(get_messaging_service)):
+    allowed_extensions = settings.ALLOWED_EXTENSIONS
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(status_code=400, 
+            detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}")
+    unique_name = f"{uuid.uuid4}{file_ext}"
+    file_path = os.path.join(settings.UPLOAD_TEMP_DIR,unique_name)
+    try:
+        with open(file_path,"wb") as buffer:
+            shutil.copyfileobj(file.file,buffer)
+    except Exception as e:
+        raise HTTPException(status_code=500,detail="Failed to save the file")
+    finally:
+        await file.close()
+
+    payload = {
+        "task_type":settings.TaskType.DOCUMENT_INGESTION,
+        "file_path":file_path,
+        "file_ext":file_ext
+    }
+
+    background_tasks(messaging.kafka_producer.send_and_wait,messaging.prompt_topic,json.dumps(payload).encode("utf-8"))
+
+    return {"status":"queued","message":"File uploaded successfully. Processing chunking and vector store ingestion in background."}

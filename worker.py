@@ -6,7 +6,9 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
 from ai_assistant import AiAssistant
 from app.utils.logger import logger
+from app.utils.text_file_handler import pdf_doc_ingestion
 import redis.asyncio as aioredis
+from app.config import settings
 
 load_dotenv()
 
@@ -35,6 +37,11 @@ async def handle_chat_stream(payload:dict,producer:AIOKafkaProducer,aiassistant:
     await redis_client.publish(redis_channel,json.dumps(response))
     await producer.send_and_wait(RESPONSE_TOPIC,json.dumps(response).encode("utf-8"))
 
+def handle_file_ingestion(payload:dict,aiassistant:AiAssistant):
+    file_path = payload.get("file_path")
+    file_ext = payload.get("file_ext")
+
+    pdf_doc_ingestion(path=file_path, ext=file_ext,ai_assistant=aiassistant)
 
 
 async def main():
@@ -52,9 +59,10 @@ async def main():
             try:
                 payload = json.loads(msg.value.decode('utf-8'))
                 task_type = payload.get("task_type")
-                if task_type == "chat_stream":
+                if task_type == settings.TaskType.CHAT_STREAM:
                     await handle_chat_stream(payload,producer,aiassistant,redis_client)
-
+                elif task_type == settings.TaskType.DOCUMENT_INGESTION:
+                    handle_file_ingestion(payload=payload,aiassistant=aiassistant)
             except json.JSONDecodeError:
                 logger.info(f"received melform json data in {msg.value}")
             except Exception as e:
