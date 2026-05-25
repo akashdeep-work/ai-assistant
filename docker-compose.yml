@@ -39,8 +39,7 @@ services:
       context: .
       dockerfile: Dockerfile.api
     ports:
-      # Use the PORT variable from .env to bind the port
-      - "${PORT}:${PORT}"
+      - "8000:8000"
 
     volumes:
       - .:/app
