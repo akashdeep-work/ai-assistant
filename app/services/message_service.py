@@ -4,8 +4,8 @@ from aiokafka.errors import KafkaConnectionError
 from app.utils.logger import logger
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 import redis.asyncio as aioredis
-import sqlite3
-from langgraph.checkpoint.sqlite import SqliteSaver
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 
 class ChatMessagingService:
@@ -18,6 +18,7 @@ class ChatMessagingService:
         self.kafka_producer = None
         self.redis_client = None
         self.checkpointer = None
+        self.db_conn = None
 
     async def start(self):
         self.kafka_producer = AIOKafkaProducer(bootstrap_servers=self.kafka_server)
@@ -39,8 +40,9 @@ class ChatMessagingService:
                 logger.info(f"[Kafka] Connection refused. Retrying in {retry_delay} seconds...")
                 await asyncio.sleep(retry_delay)
 
-        con = sqlite3.connect("checkpoints.sqlite", check_same_thread=False)
-        self.checkpointer = SqliteSaver(con)
+        self.db_conn = await aiosqlite.connect("checkpoints.sqlite", check_same_thread=False)
+        self.checkpointer = AsyncSqliteSaver(self.db_conn)
+        self.checkpointer.setup()
         logger.info("Chat message service started")
 
     async def stop(self):
@@ -48,6 +50,9 @@ class ChatMessagingService:
             await self.kafka_producer.stop()
         if self.redis_client:
             await self.redis_client.close()
+
+        if self.db_conn:
+            await self.db_conn.close()
         
         logger.info("Chat message service stopped")
 

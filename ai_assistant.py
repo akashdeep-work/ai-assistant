@@ -9,8 +9,8 @@ from operator import add as add_messages
 import faiss
 from langchain_community.docstore.in_memory import InMemoryDocstore
 import os
-import sqlite3
-from langgraph.checkpoint.sqlite import SqliteSaver
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -60,13 +60,22 @@ class AiAssistant:
         self.llm = ChatOllama(model="llama3.1", temperature=0, base_url=ollama_url)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         
-        db_file = "checkpoints.sqlite"
-        self.conn = sqlite3.connect(db_file,check_same_thread=False)
-        self.memory = SqliteSaver(self.conn)
+        self.db_conn = None
+        self.memory = None
+        self.rag_agent = None
 
         # 5. Build Graph
         self.graph = StateGraph(AgentState)
         self._create_graph()
+
+    async def initialize_checkpointer(self, db_file: str = "checkpoints.sqlite"):
+        """Asynchronously sets up the database checkpointer and compiles the graph."""
+        self.db_conn = await aiosqlite.connect(db_file, check_same_thread=False)
+        self.memory = AsyncSqliteSaver(self.db_conn)
+        
+        await self.memory.setup()
+        
+        self.rag_agent = self.graph.compile(checkpointer=self.memory)
 
     def ingest_documents(self, texts: list[str]):
         """Call this method to actually put data into your vector store."""

@@ -46,6 +46,7 @@ def handle_file_ingestion(payload:dict,aiassistant:AiAssistant):
 
 async def main():
     aiassistant = AiAssistant()
+    await aiassistant.initialize_checkpointer()
 
     consumer = AIOKafkaConsumer(PROMPT_TOPIC,bootstrap_servers=KAFKA_SERVER,group_id="ai-worker")
     producer = AIOKafkaProducer(bootstrap_servers=KAFKA_SERVER)

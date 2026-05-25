@@ -1,16 +1,16 @@
 import pytest
 from fastapi.testclient import TestClient
 from main import app
-import sqlite3
-from langgraph.checkpoint.sqlite import SqliteSaver
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langchain_core.messages import HumanMessage, AIMessage
 
 client = TestClient(app=app)
 
 @pytest.fixture(autouse=True)
-def setup_db():
-    conn = sqlite3.connect("checkpoints.sqlite")
-    cursor = SqliteSaver(conn=conn)
+async def setup_db():
+    conn = await aiosqlite.connect("checkpoints.sqlite")
+    cursor = AsyncSqliteSaver(conn=conn)
 
     yield
 
