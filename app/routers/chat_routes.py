@@ -73,7 +73,7 @@ async def user_query(request:ChatMessageRequest, background_tasks:BackgroundTask
         "request_id":request_id
     }
 
-    background_tasks(messaging.kafka_producer.send_and_wait,messaging.prompt_topic,json.dumps(payload).encode("utf-8"))
+    background_tasks.add_task(messaging.kafka_producer.send_and_wait,messaging.prompt_topic,json.dumps(payload).encode("utf-8"))
 
     return StreamingResponse(messaging.yield_stream(request_id=request_id),media_type="text/event-stream")
 
@@ -100,6 +100,6 @@ async def upload_file(background_tasks:BackgroundTasks, file:UploadFile = File(.
         "file_ext":file_ext
     }
 
-    background_tasks(messaging.kafka_producer.send_and_wait,messaging.prompt_topic,json.dumps(payload).encode("utf-8"))
+    background_tasks.add_task(messaging.kafka_producer.send_and_wait,messaging.prompt_topic,json.dumps(payload).encode("utf-8"))
 
     return {"status":"queued","message":"File uploaded successfully. Processing chunking and vector store ingestion in background."}
