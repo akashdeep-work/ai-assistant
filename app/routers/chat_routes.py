@@ -47,9 +47,9 @@ async def get_chat_by_thread(thread_id:str, messaging:ChatMessagingService=Depen
     for msg in messages:
         if isinstance(msg,HumanMessage):
             role="user"
-        if isinstance(msg,AIMessage):
+        elif isinstance(msg,AIMessage):
             role="assistant"
-        if isinstance(msg,SystemMessage):
+        elif isinstance(msg,SystemMessage):
             role="system"
         else:
             role="tool"
@@ -145,7 +145,8 @@ async def upload_file(background_tasks:BackgroundTasks, file:UploadFile = File(.
     file_path = os.path.join(settings.UPLOAD_TEMP_DIR,unique_name)
     try:
         with open(file_path,"wb") as buffer:
-            shutil.copyfileobj(file.file,buffer)
+            while chunk := await file.read(1024 * 1024):  # Read 1MB at a time
+                buffer.write(chunk)
     except Exception as e:
         raise HTTPException(status_code=500,detail="Failed to save the file")
     finally:
