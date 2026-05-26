@@ -3,7 +3,7 @@ import asyncio
 import json
 import os
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage,AIMessage
 from ai_assistant import AiAssistant
 from app.utils.logger import logger
 from app.utils.text_file_handler import pdf_doc_ingestion
@@ -28,10 +28,11 @@ async def handle_chat_stream(payload:dict,producer:AIOKafkaProducer,aiassistant:
     try:
         async for event in aiassistant.rag_agent.astream(input=state_update,config=config,stream_mode="messages"):
             message_chunk, metadata = event
+            logger.info(f"LangGraph Event - Metadata: {metadata}, Type: {type(message_chunk)}")
             if hasattr(message_chunk,"tool_call_chunk") and message_chunk.tool_call_chunk:
                 continue
             content = message_chunk.content or ""
-            if metadata.get("langgraph_node") == "llm" and content:
+            if isinstance(message_chunk,AIMessage) and content:
                 if content.strip().startswith('{"name":') or '"parameters":' in content:
                     continue
                 response = {"request_id":request_id,"status":"streaming","text":content}
