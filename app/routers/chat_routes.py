@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 import os
 import shutil
 from app.config import settings
+from app.utils.logger import logger
 import asyncio
 
 router = APIRouter(prefix="/chats",tags=["chats"])
@@ -77,28 +78,49 @@ async def user_query(
         "request_id": request_id
     }
 
-    # 1. Create PubSub and subscribe FIRST to guarantee we don't miss messages
     pubsub = messaging.redis_client.pubsub()
     await pubsub.subscribe(f"stream:{request_id}")
+    logger.info(f"Subscribed to Redis channel: stream:{request_id}")
 
-    # 2. Now fire the background task to Kafka
-    asyncio.create_task(
-        messaging.kafka_producer.send_and_wait(
-            messaging.prompt_topic, 
-            json.dumps(payload).encode("utf-8")
-        )
-    )
+    # 1. Wrap the background task to catch silent errors!
+    async def send_to_kafka_safely():
+        try:
+            logger.info("Attempting to send prompt to Kafka...")
+            await messaging.kafka_producer.send_and_wait(
+                messaging.prompt_topic, 
+                json.dumps(payload).encode("utf-8")
+            )
+            logger.info("Successfully sent prompt to Kafka!")
+        except Exception as e:
+            logger.error(f"KAFKA SEND ERROR: {e}")
+            # If Kafka fails, send a dummy message to close the stream gracefully
+            error_msg = {"request_id": request_id, "status": "done", "text": "Kafka Error"}
+            await messaging.redis_client.publish(f"stream:{request_id}", json.dumps(error_msg))
 
-    # 3. Define the generator inline so it uses the already-subscribed pubsub
+    # Fire the safe task
+    asyncio.create_task(send_to_kafka_safely())
+
+    # 2. Add heavily instrumented streaming generator
     async def event_generator():
         try:
+            # Yield immediately so Nginx doesn't close the empty connection
+            yield f"data: {json.dumps({'status': 'connected'})}\n\n"
+            logger.info("Waiting for Redis messages...")
+            
             async for msg in pubsub.listen():
+                logger.info(f"Raw Redis message: {msg}")
                 if msg['type'] == 'message':
                     data = json.loads(msg['data'])
+                    
                     if data.get("status") == "done":
+                        logger.info("Received 'done' signal. Closing stream.")
                         break
+                        
                     yield f"data: {json.dumps(data)}\n\n"
+        except Exception as e:
+            logger.error(f"STREAMING ERROR: {e}")
         finally:
+            logger.info("Unsubscribing and closing stream.")
             await pubsub.unsubscribe(f"stream:{request_id}")
             await pubsub.close()
 
