@@ -30,10 +30,12 @@ async def handle_chat_stream(payload:dict,producer:AIOKafkaProducer,aiassistant:
             message_chunk, metadata = event
             logger.info(f"LangGraph Event - Metadata: {metadata}, Type: {type(message_chunk)}")
             if hasattr(message_chunk,"tool_call_chunk") and message_chunk.tool_call_chunk:
+                logger.info("Skipping actual tool call chunk...")
                 continue
             content = message_chunk.content or ""
-            if isinstance(message_chunk,AIMessage) and content:
+            if message_chunk.type == "ai" and content:
                 if content.strip().startswith('{"name":') or '"parameters":' in content:
+                    logger.info(f"SAFETY NET CAUGHT HALLUCINATION: {content}")
                     continue
                 response = {"request_id":request_id,"status":"streaming","text":content}
                 await redis_client.publish(redis_channel,json.dumps(response))
