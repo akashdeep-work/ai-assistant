@@ -126,6 +126,3 @@ class AiAssistant:
         self.graph.add_conditional_edges("llm", self.should_continue)
         self.graph.add_edge("retriever_agent", "llm")
         self.graph.set_entry_point("llm")
-        
-        # Add checkpointer for API memory handling
-        self.rag_agent = self.graph.compile(checkpointer=self.memory)

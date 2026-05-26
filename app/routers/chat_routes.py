@@ -20,7 +20,7 @@ async def get_all_chats(request:AllChatsListRequest, messaging:ChatMessagingServ
     for id in thread_ids:
         config = {"configurable":{"thread_id":id}}
         
-        state_snapshot = messaging.checkpointer.get_tuple(config)
+        state_snapshot = await messaging.checkpointer.aget_tuple(config)
 
         if state_snapshot and state_snapshot.checkpoint:
             channel_value = state_snapshot.checkpoint.get("channel_values",{})
@@ -35,7 +35,7 @@ async def get_chat_by_thread(thread_id:str, messaging:ChatMessagingService=Depen
     
     config = {"configurable":{"thread_id":id}}
         
-    state_snapshot = messaging.checkpointer.get_tuple(config)
+    state_snapshot = await messaging.checkpointer.aget_tuple(config)
 
     if not state_snapshot or not state_snapshot.checkpoint:
         return HTTPException(status_code=404,detail="Chat history not found")
@@ -75,7 +75,13 @@ async def user_query(request:ChatMessageRequest, background_tasks:BackgroundTask
 
     background_tasks.add_task(messaging.kafka_producer.send_and_wait,messaging.prompt_topic,json.dumps(payload).encode("utf-8"))
 
-    return StreamingResponse(messaging.yield_stream(request_id=request_id),media_type="text/event-stream")
+    return StreamingResponse(messaging.yield_stream(request_id=request_id),
+                             media_type="text/event-stream",
+                             headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Prevents Nginx/Proxies from buffering chunks
+        })
 
 @router.post("/upload")
 async def upload_file(background_tasks:BackgroundTasks, file:UploadFile = File(...), messaging:ChatMessagingService=Depends(get_messaging_service)):
