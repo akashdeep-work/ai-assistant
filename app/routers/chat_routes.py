@@ -62,18 +62,26 @@ async def get_chat_by_thread(thread_id:str, messaging:ChatMessagingService=Depen
     
 
 @router.post("/query")
-async def user_query(request:ChatMessageRequest, background_tasks:BackgroundTasks, messaging:ChatMessagingService=Depends(get_messaging_service)):
+async def user_query(
+    request: ChatMessageRequest, 
+    messaging: ChatMessagingService = Depends(get_messaging_service)
+):
     thread_id = request.thread_id
     prompt = request.prompt
     request_id = str(uuid.uuid4())
 
     payload = {
-        "task_type":settings.TaskType.CHAT_STREAM,
-        "thread_id":thread_id,
-        "prompt":prompt,
-        "request_id":request_id
+        "task_type": settings.TaskType.CHAT_STREAM,
+        "thread_id": thread_id,
+        "prompt": prompt,
+        "request_id": request_id
     }
 
+    # 1. Create PubSub and subscribe FIRST to guarantee we don't miss messages
+    pubsub = messaging.redis_client.pubsub()
+    await pubsub.subscribe(f"stream:{request_id}")
+
+    # 2. Now fire the background task to Kafka
     asyncio.create_task(
         messaging.kafka_producer.send_and_wait(
             messaging.prompt_topic, 
@@ -81,13 +89,28 @@ async def user_query(request:ChatMessageRequest, background_tasks:BackgroundTask
         )
     )
 
-    return StreamingResponse(messaging.yield_stream(request_id=request_id),
-                             media_type="text/event-stream",
-                             headers={
+    # 3. Define the generator inline so it uses the already-subscribed pubsub
+    async def event_generator():
+        try:
+            async for msg in pubsub.listen():
+                if msg['type'] == 'message':
+                    data = json.loads(msg['data'])
+                    if data.get("status") == "done":
+                        break
+                    yield f"data: {json.dumps(data)}\n\n"
+        finally:
+            await pubsub.unsubscribe(f"stream:{request_id}")
+            await pubsub.close()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"  # Prevents Nginx/Proxies from buffering chunks
-        })
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 @router.post("/upload")
 async def upload_file(background_tasks:BackgroundTasks, file:UploadFile = File(...), messaging:ChatMessagingService=Depends(get_messaging_service)):
