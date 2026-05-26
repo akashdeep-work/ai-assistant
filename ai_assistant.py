@@ -18,7 +18,7 @@ load_dotenv()
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL","http://host.docker.internal:11434")
 
 class AgentState(TypedDict):
-    message: Annotated[Sequence[BaseMessage], add_messages]
+    messages: Annotated[Sequence[BaseMessage], add_messages]
 
 system_prompt = "You are a helpful AI assistant with access to a knowledge base."
 
@@ -86,22 +86,22 @@ class AiAssistant:
         self.vector_store.save_local(self.index_path)
 
     def should_continue(self, state: AgentState) -> str:
-        last_message = state['message'][-1]
+        last_message = state['messages'][-1]
         if hasattr(last_message, 'tool_calls') and len(last_message.tool_calls) > 0:
             return "retriever_agent"
         return END
     
     def call_llm(self, state: AgentState) -> dict:
-        messages = list(state['message'])
+        messages = list(state['messages'])
         # Only inject system prompt if it's the first message to save tokens
         if not any(isinstance(m, SystemMessage) for m in messages):
             messages = [SystemMessage(content=system_prompt)] + messages
             
         response = self.llm_with_tools.invoke(messages)
-        return {"message": [response]}
+        return {"messages": [response]}
     
     def tool_action(self, state: AgentState) -> dict:
-        last_message = state['message'][-1]
+        last_message = state['messages'][-1]
         results = []
         
         for t in last_message.tool_calls:
@@ -117,7 +117,7 @@ class AiAssistant:
                 content=str(tool_result)
             ))
 
-        return {'message': results}
+        return {'messages': results}
     
     def _create_graph(self):
         self.graph.add_node("llm", self.call_llm)

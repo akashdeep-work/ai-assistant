@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 import os
 import shutil
 from app.config import settings
+import asyncio
 
 router = APIRouter(prefix="/chats",tags=["chats"])
 
@@ -73,7 +74,12 @@ async def user_query(request:ChatMessageRequest, background_tasks:BackgroundTask
         "request_id":request_id
     }
 
-    background_tasks.add_task(messaging.kafka_producer.send_and_wait,messaging.prompt_topic,json.dumps(payload).encode("utf-8"))
+    asyncio.create_task(
+        messaging.kafka_producer.send_and_wait(
+            messaging.prompt_topic, 
+            json.dumps(payload).encode("utf-8")
+        )
+    )
 
     return StreamingResponse(messaging.yield_stream(request_id=request_id),
                              media_type="text/event-stream",
