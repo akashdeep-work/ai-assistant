@@ -58,7 +58,7 @@ async def main():
     aiassistant = AiAssistant()
     await aiassistant.initialize_checkpointer()
 
-    consumer = AIOKafkaConsumer(PROMPT_TOPIC,bootstrap_servers=KAFKA_SERVER,group_id="ai-worker")
+    consumer = AIOKafkaConsumer(PROMPT_TOPIC,bootstrap_servers=KAFKA_SERVER,group_id="ai-worker", auto_offset_reset="earliest")
     producer = AIOKafkaProducer(bootstrap_servers=KAFKA_SERVER)
     redis_client = aioredis.from_url(REDIS_URL)
     await consumer.start()
