@@ -102,13 +102,16 @@ class AiAssistant:
             return "retriever_agent"
         return END
     
-    def call_llm(self, state: AgentState, runnable_config:RunnableConfig) -> dict:
+    def call_llm(self, state: AgentState, config:RunnableConfig = None, **kwargs) -> dict:
+        
+        run_config = config or kwargs.get("runnable_config") or kwargs.get("config")
+        
         messages = list(state['messages'])
         # Only inject system prompt if it's the first message to save tokens
         if not any(isinstance(m, SystemMessage) for m in messages):
             messages = [SystemMessage(content=system_prompt)] + messages
             
-        response = self.llm_with_tools.invoke(messages, config=runnable_config)
+        response = self.llm_with_tools.invoke(messages, config=run_config)
         return {"messages": [response]}
     
     def tool_action(self, state: AgentState) -> dict:
