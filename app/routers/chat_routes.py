@@ -25,7 +25,7 @@ async def get_all_chats(request:AllChatsListRequest, messaging:ChatMessagingServ
 
         if state_snapshot and state_snapshot.checkpoint:
             channel_value = state_snapshot.checkpoint.get("channel_values",{})
-            messages = channel_value.get("message",[])
+            messages = channel_value.get("messages",[])
             if messages:
                 preview.append({"thread_id":id,"last_message":messages[-1].content})
 
@@ -34,14 +34,14 @@ async def get_all_chats(request:AllChatsListRequest, messaging:ChatMessagingServ
 @router.get("/{thread_id}",response_model=ChatMessagesResponse)
 async def get_chat_by_thread(thread_id:str, messaging:ChatMessagingService=Depends(get_messaging_service)):
     
-    config = {"configurable":{"thread_id":id}}
+    config = {"configurable":{"thread_id":thread_id}}
         
     state_snapshot = await messaging.checkpointer.aget_tuple(config)
 
     if not state_snapshot or not state_snapshot.checkpoint:
-        return HTTPException(status_code=404,detail="Chat history not found")
+        raise HTTPException(status_code=404,detail="Chat history not found")
     channel_value = state_snapshot.checkpoint.get("channel_values",{})
-    messages = channel_value.get("message",[])
+    messages = channel_value.get("messages",[])
     formatted_messages = []
     for msg in messages:
         if isinstance(msg,HumanMessage):

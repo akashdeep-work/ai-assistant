@@ -27,8 +27,13 @@ async def handle_chat_stream(payload:dict,producer:AIOKafkaProducer,aiassistant:
     redis_channel = f"stream:{request_id}"
     async for event in aiassistant.rag_agent.astream(input=state_update,config=config,stream_mode="messages"):
         message_chunk, metadata = event
-        if metadata.get("langgraph_node") == "llm" and message_chunk.content:
-            response = {"request_id":request_id,"status":"streaming","text":message_chunk.content}
+        if hasattr(message_chunk,"tool_call_chunk") and message_chunk.tool_call_chunk:
+            continue
+        content = message_chunk.content or ""
+        if metadata.get("langgraph_node") == "llm" and content:
+            if content.strip().startwith('{"name":') or '"parameters":' in content:
+                continue
+            response = {"request_id":request_id,"status":"streaming","text":content}
             await redis_client.publish(redis_channel,json.dumps(response))
             await producer.send_and_wait(RESPONSE_TOPIC,json.dumps(response).encode("utf-8"))
             
