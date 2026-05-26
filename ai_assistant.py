@@ -12,6 +12,7 @@ import os
 import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from dotenv import load_dotenv
+from langchain_core.runnables import RunnableConfig
 
 load_dotenv()
 
@@ -101,13 +102,13 @@ class AiAssistant:
             return "retriever_agent"
         return END
     
-    def call_llm(self, state: AgentState) -> dict:
+    def call_llm(self, state: AgentState, runnable_config:RunnableConfig) -> dict:
         messages = list(state['messages'])
         # Only inject system prompt if it's the first message to save tokens
         if not any(isinstance(m, SystemMessage) for m in messages):
             messages = [SystemMessage(content=system_prompt)] + messages
             
-        response = self.llm_with_tools.invoke(messages)
+        response = self.llm_with_tools.invoke(messages, config=runnable_config)
         return {"messages": [response]}
     
     def tool_action(self, state: AgentState) -> dict:
