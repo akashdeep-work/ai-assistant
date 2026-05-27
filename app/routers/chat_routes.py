@@ -11,9 +11,11 @@ import shutil
 from app.config import settings
 from app.utils.logger import logger
 import asyncio
+from fastapi.concurrency import run_in_threadpool
 
 router = APIRouter(prefix="/chats",tags=["chats"])
 
+os.makedirs(settings.UPLOAD_TEMP_DIR,exist_ok=True)
 
 @router.post("/all",response_model=AllChatListResponse)
 async def get_all_chats(request:AllChatsListRequest, messaging:ChatMessagingService=Depends(get_messaging_service)):
@@ -145,8 +147,7 @@ async def upload_file(background_tasks:BackgroundTasks, file:UploadFile = File(.
     file_path = os.path.join(settings.UPLOAD_TEMP_DIR,unique_name)
     try:
         with open(file_path,"wb") as buffer:
-            while chunk := await file.read(1024 * 1024):  # Read 1MB at a time
-                buffer.write(chunk)
+            await run_in_threadpool(shutil.copyfileobj,file.file,buffer)
     except Exception as e:
         raise HTTPException(status_code=500,detail="Failed to save the file")
     finally:

@@ -21,14 +21,15 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL","http://host.docker.internal:11434
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
 
-system_prompt = """You are a highly capable and conversational AI assistant. You have access to a vector database via a retriever tool.
+system_prompt = """You are a helpful and concise AI assistant. You have access to a retrieval tool to look up private documents and database records.
 
-CRITICAL INSTRUCTIONS FOR TOOL USAGE:
-1. GREETINGS & CHITCHAT: If the user simply says "hi", "hello", "how are you", or asks about your identity, YOU MUST NOT USE THE TOOL. Respond directly and conversationally in one step.
-2. GENERAL KNOWLEDGE: If the user asks a generic question that does not require private database knowledge, YOU MUST NOT USE THE TOOL.
-3. DATABASE QUERIES: ONLY use the retriever tool if the user explicitly asks for specific facts, documents, or data that would naturally live in your secure knowledge base.
+CRITICAL RULES FOR TOOL USAGE:
+1. CASUAL CHAT: If the user says hello, asks how you are, or makes small talk, respond naturally. DO NOT use any tools.
+2. GENERAL KNOWLEDGE: If the user asks a basic question (e.g., "What is the capital of France?"), answer directly. DO NOT use any tools.
+3. SPECIFIC QUERIES: ONLY call the retrieval tool when the user asks about [Insert Your Specific Domain Here, e.g., internal company policies, user data, or specific product manuals].
+4. NO GUESSING: If you use the tool and it does not contain the answer, explicitly state "I cannot find that information in the documents." Do not invent answers.
 
-Failure to follow these rules will break the system. Be concise and helpful."""
+Think carefully about the user's intent before deciding to use a tool."""
 
 class AiAssistant:
     def __init__(self):
@@ -65,7 +66,9 @@ class AiAssistant:
         self.tools = [self.retriever_tool]
         
         # 4. Initialize and bind LLM
-        self.llm = ChatOllama(model="llama3.1", temperature=0, base_url=ollama_url)
+        self.llm = ChatOllama(model="qwen3:4b", 
+        temperature=0,      # Zero creativity for strict tool discipline
+        num_ctx=2048, base_url=ollama_url)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         
         self.db_conn = None
