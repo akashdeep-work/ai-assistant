@@ -3,7 +3,7 @@ import asyncio
 import json
 import os
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage,AIMessage
+from langchain_core.messages import HumanMessage,AIMessage, AIMessageChunk
 from ai_assistant import AiAssistant
 from app.utils.logger import logger
 from app.utils.text_file_handler import pdf_doc_ingestion
@@ -34,7 +34,7 @@ async def handle_chat_stream(payload:dict,producer:AIOKafkaProducer,aiassistant:
                 continue
             content = message_chunk.content or ""
             logger.info(f"Message content before condition: {content}")
-            if message_chunk.type == "ai" and content:
+            if isinstance(message_chunk,(AIMessage,AIMessageChunk)) and content:
                 logger.info(f"Is AI Message: {content}")
                 if content.strip().startswith('{"name":') or '"parameters":' in content:
                     logger.info(f"SAFETY NET CAUGHT HALLUCINATION: {content}")
