@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     REDIS_URL:str
     OLLAMA_BASE_URL:str
 
-    UPLOAD_TEMP_DIR:str = "/upload_temp_dir"
+    UPLOAD_TEMP_DIR:str = "upload_temp_dir"
     ALLOWED_EXTENSIONS:List[str] = [".pdf",".md",".txt"]
 
     class TaskType:

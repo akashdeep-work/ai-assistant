@@ -143,7 +143,7 @@ async def upload_file(background_tasks:BackgroundTasks, file:UploadFile = File(.
     if file_ext not in allowed_extensions:
         raise HTTPException(status_code=400, 
             detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}")
-    unique_name = f"{uuid.uuid4}{file_ext}"
+    unique_name = f"{uuid.uuid4()}{file_ext}"
     file_path = os.path.join(settings.UPLOAD_TEMP_DIR,unique_name)
     try:
         with open(file_path,"wb") as buffer:
