@@ -33,11 +33,14 @@ async def handle_chat_stream(payload:dict,producer:AIOKafkaProducer,aiassistant:
                 logger.info("Skipping actual tool call chunk...")
                 continue
             content = message_chunk.content or ""
+            logger.info(f"Message content before condition: {content}")
             if message_chunk.type == "ai" and content:
+                logger.info(f"Is AI Message: {content}")
                 if content.strip().startswith('{"name":') or '"parameters":' in content:
                     logger.info(f"SAFETY NET CAUGHT HALLUCINATION: {content}")
                     continue
                 response = {"request_id":request_id,"status":"streaming","text":content}
+                logger.info(f"Json Response for Redis: {response}")
                 await redis_client.publish(redis_channel,json.dumps(response))
                 await producer.send_and_wait(RESPONSE_TOPIC,json.dumps(response).encode("utf-8"))
     except Exception as e:
