@@ -170,7 +170,7 @@ class AiAssistant:
                                           "FINISH":END})
         
         self.graph.add_conditional_edges("rag_agent",
-                                         self.should_continue,
+                                         self.should_continue_rag,
                                          {"retriever_tool":"retriever_tool",
                                           "END": END })
         
