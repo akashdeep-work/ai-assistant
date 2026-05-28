@@ -26,7 +26,7 @@ async def handle_chat_stream(payload:dict,producer:AIOKafkaProducer,aiassistant:
     state_update = {"messages":[HumanMessage(content=prompt)]}
     redis_channel = f"stream:{request_id}"
     try:
-        async for event in aiassistant.rag_agent.astream(input=state_update,config=config,stream_mode="messages"):
+        async for event in aiassistant.multi_agent.astream(input=state_update,config=config,stream_mode="messages"):
             message_chunk, metadata = event
             logger.info(f"LangGraph Event - Metadata: {metadata}, Type: {type(message_chunk)}")
             if hasattr(message_chunk,"tool_call_chunk") and message_chunk.tool_call_chunk:

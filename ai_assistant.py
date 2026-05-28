@@ -13,23 +13,18 @@ import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
-
+from pydantic import BaseModel
 load_dotenv()
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL","http://host.docker.internal:11434")
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
+    next_agent:str
 
-system_prompt = """You are a helpful and concise AI assistant. You have access to a retrieval tool to look up private documents and database records.
-
-CRITICAL RULES FOR TOOL USAGE:
-1. CASUAL CHAT: If the user says hello, asks how you are, or makes small talk, respond naturally. DO NOT use any tools.
-2. GENERAL KNOWLEDGE: If the user asks a basic question (e.g., "What is the capital of France?"), answer directly. DO NOT use any tools.
-3. SPECIFIC QUERIES: ONLY call the retrieval tool when the user asks about [Insert Your Specific Domain Here, e.g., internal company policies, user data, or specific product manuals].
-4. NO GUESSING: If you use the tool and it does not contain the answer, explicitly state "I cannot find that information in the documents." Do not invent answers.
-
-Think carefully about the user's intent before deciding to use a tool."""
+class Router(BaseModel):
+    """Route the user query to specialize agent"""
+    next=["rag_agent","chat_agent","FINISH"]
 
 class AiAssistant:
     def __init__(self):
@@ -70,14 +65,50 @@ class AiAssistant:
         temperature=0,      # Zero creativity for strict tool discipline
         num_ctx=2048, base_url=ollama_url)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
-        
+        self.supervise_llm = self.llm.with_structured_output(Router)
         self.db_conn = None
         self.memory = None
-        self.rag_agent = None
+        self.multi_agent = None
 
         # 5. Build Graph
         self.graph = StateGraph(AgentState)
         self._create_graph()
+
+    async def supervise_node(self,state:AgentState,config:RunnableConfig=None,**kwargs):
+        """Determine which agent should handle the request"""
+        run_config = config or kwargs.get("runnable_config") or kwargs.get("config")
+        system_prompt = (
+            "You are a routing supervisor. Direct the user's request to the correct agent:\n"
+            "- 'rag_agent': For queries requiring lookups of specific internal documents, manuals, or database records.\n"
+            "- 'chat_agent': For casual greetings (e.g., 'hello'), general knowledge, or small talk.\n"
+            "- 'FINISH': If the user explicitly ends the conversation."
+        )
+
+        messages = [SystemMessage(content=system_prompt)] + list(state["messages"])
+        try:
+            response = await self.supervise_llm.ainvoke(messages,config=run_config)
+            return {"next_agent":response.next}
+        except Exception as e:
+            return {"next_agent":"chat_agent"}
+    
+    async def chat_agent_node(self, state: AgentState, config: RunnableConfig= None, **kwargs):
+        """Handle casual conversation without tool"""
+        run_config = config or kwargs.get("runnable_config") or kwargs.get("config")
+        system_prompt = "You are a friendly, helpful AI assistant. Answer general questions naturally."
+        messages = [SystemMessage(content=system_prompt)] + list(state['messages'])
+        response = await self.llm.ainvoke(messages,config=run_config)
+        return {"messages":[response]}
+    
+    async def rag_agent_node(self, state: AgentState, config: RunnableConfig= None, **kwargs):
+        """Handle document retrievel query"""
+        run_config = config or kwargs.get("runnable_config") or kwargs.get("config")
+        system_prompt = (
+            "You are a specialized retrieval assistant. Use your tools to look up information. "
+            "If the information is not in the documents, explicitly state that you cannot find it."
+        )
+        messages = [SystemMessage(content=system_prompt)] + list(state['messages'])
+        response = await self.llm_with_tools.ainvoke(messages,config=run_config)
+        return {"messages":[response]}
 
     async def initialize_checkpointer(self, db_file: str = "checkpoints.sqlite"):
         """Asynchronously sets up the database checkpointer and compiles the graph."""
@@ -86,7 +117,7 @@ class AiAssistant:
         
         await self.memory.setup()
         
-        self.rag_agent = self.graph.compile(checkpointer=self.memory)
+        self.multi_agent = self.graph.compile(checkpointer=self.memory)
     async def close(self):
         """Cleanly releases database resources."""
         if self.db_conn:
@@ -96,23 +127,15 @@ class AiAssistant:
         self.vector_store.add_texts(texts)
         self.vector_store.save_local(self.index_path)
 
-    def should_continue(self, state: AgentState) -> str:
+    def route_for_supervisor(self,state:AgentState)-> str:
+        """Read decision from supervisor node"""
+        return state.get("next_agent","chat_agent")
+
+    def should_continue_rag(self, state: AgentState) -> str:
         last_message = state['messages'][-1]
         if hasattr(last_message, 'tool_calls') and len(last_message.tool_calls) > 0:
-            return "retriever_agent"
-        return END
-    
-    async def call_llm(self, state: AgentState, config:RunnableConfig = None, **kwargs) -> dict:
-        
-        run_config = config or kwargs.get("runnable_config") or kwargs.get("config")
-        
-        messages = list(state['messages'])
-        # Only inject system prompt if it's the first message to save tokens
-        if not any(isinstance(m, SystemMessage) for m in messages):
-            messages = [SystemMessage(content=system_prompt)] + messages
-            
-        response = await self.llm_with_tools.ainvoke(messages, config=run_config)
-        return {"messages": [response]}
+            return "retriever_tool"
+        return "END"
     
     def tool_action(self, state: AgentState) -> dict:
         last_message = state['messages'][-1]
@@ -134,9 +157,22 @@ class AiAssistant:
         return {'messages': results}
     
     def _create_graph(self):
-        self.graph.add_node("llm", self.call_llm)
-        self.graph.add_node("retriever_agent", self.tool_action)
+        self.graph.add_node("supervisor",self.supervise_node)
+        self.graph.add_node("chat_agent",self.chat_agent_node)
+        self.graph.add_node("rag_agent",self.rag_agent_node)
+        self.graph.add_node("retriever_tool",self.tool_action)
+
+        self.graph.set_entry_point("supervisor")
+        self.graph.add_conditional_edges("supervisor",
+                                         self.route_for_supervisor,
+                                         {"chat_agent":"chat_agent",
+                                          "rag_agent":"rag_agent",
+                                          "FINISH":END})
         
-        self.graph.add_conditional_edges("llm", self.should_continue)
-        self.graph.add_edge("retriever_agent", "llm")
-        self.graph.set_entry_point("llm")
+        self.graph.add_conditional_edges("rag_agent",
+                                         self.should_continue,
+                                         {"retriever_tool":"retriever_tool",
+                                          "END": END })
+        
+        self.graph.add_edge("retriever_tool","rag_agent")
+        self.graph.add_edge("chat_agent",END)
