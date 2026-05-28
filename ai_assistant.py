@@ -24,7 +24,7 @@ class AgentState(TypedDict):
 
 class Router(BaseModel):
     """Route the user query to specialize agent"""
-    next=Literal["rag_agent","chat_agent","FINISH"]
+    next:Literal["rag_agent","chat_agent","FINISH"]
 
 class AiAssistant:
     def __init__(self):
