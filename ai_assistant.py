@@ -3,7 +3,7 @@ from langchain_ollama.embeddings import OllamaEmbeddings
 from langchain_ollama.chat_models import ChatOllama
 from langchain_community.vectorstores import FAISS
 from langchain_core.tools.retriever import create_retriever_tool
-from typing import Annotated, TypedDict, Sequence
+from typing import Annotated, TypedDict, Sequence, Literal
 from langchain_core.messages import BaseMessage, SystemMessage, ToolMessage
 from operator import add as add_messages
 import faiss
@@ -24,7 +24,7 @@ class AgentState(TypedDict):
 
 class Router(BaseModel):
     """Route the user query to specialize agent"""
-    next=["rag_agent","chat_agent","FINISH"]
+    next=Literal["rag_agent","chat_agent","FINISH"]
 
 class AiAssistant:
     def __init__(self):
