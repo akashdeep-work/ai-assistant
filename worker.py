@@ -26,6 +26,7 @@ async def handle_chat_stream(payload:dict,producer:AIOKafkaProducer,aiassistant:
     state_update = {"messages":[HumanMessage(content=prompt)]}
     redis_channel = f"stream:{request_id}"
     try:
+        final_response = ""
         async for event in aiassistant.multi_agent.astream(input=state_update,config=config,stream_mode="messages"):
             message_chunk, metadata = event
             logger.info(f"LangGraph Event - Metadata: {metadata}, Type: {type(message_chunk)}")
@@ -39,10 +40,10 @@ async def handle_chat_stream(payload:dict,producer:AIOKafkaProducer,aiassistant:
                 if content.strip().startswith('{"name":') or '"parameters":' in content:
                     logger.info(f"SAFETY NET CAUGHT HALLUCINATION: {content}")
                     continue
+                final_response += content
                 response = {"request_id":request_id,"status":"streaming","text":content}
                 logger.info(f"Json Response for Redis: {response}")
                 await redis_client.publish(redis_channel,json.dumps(response))
-                await producer.send_and_wait(RESPONSE_TOPIC,json.dumps(response).encode("utf-8"))
     except Exception as e:
         logger.info(f"Stream failed: {str(e)}")
         error_response = {"request_id": request_id, "status": "streaming", "text": f"\n[System Error: {str(e)}]"}
@@ -51,6 +52,7 @@ async def handle_chat_stream(payload:dict,producer:AIOKafkaProducer,aiassistant:
     finally:            
         response = {"request_id":request_id,"status":"done"}
         await redis_client.publish(redis_channel,json.dumps(response))
+        kafka_response = {"request_id":request_id,"status":"done","full_text":final_response}
         await producer.send_and_wait(RESPONSE_TOPIC,json.dumps(response).encode("utf-8"))
 
 def handle_file_ingestion(payload:dict,aiassistant:AiAssistant):

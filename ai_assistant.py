@@ -51,7 +51,7 @@ class AiAssistant:
                 docstore=InMemoryDocstore(), 
                 index_to_docstore_id={}
             )
-        self.retriever = self.vector_store.as_retriever(search_kwargs={'k': 5})
+        self.retriever = self.vector_store.as_retriever(search_kwargs={'k': 3})
         
         # 3. Create the tool using LangChain's native function (avoids 'self' bugs)
         self.retriever_tool = create_retriever_tool(
