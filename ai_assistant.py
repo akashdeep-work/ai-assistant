@@ -1,4 +1,4 @@
-from langgraph.graph import StateGraph, END
+from langgraph.graph import StateGraph, END,START
 from langchain_ollama.embeddings import OllamaEmbeddings
 from langchain_ollama.chat_models import ChatOllama
 from langchain_community.vectorstores import FAISS
@@ -14,6 +14,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel
+from router_dataset import router_examples
 load_dotenv()
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL","http://host.docker.internal:11434")
@@ -59,6 +60,11 @@ class AiAssistant:
             description="Search the knowledge base for relevant information."
         )
         self.tools = [self.retriever_tool]
+
+        text = [ex[0] for ex in router_examples]
+        metadata = [{"route":ex[1]} for ex in router_examples]
+
+        self.semantic_router = FAISS.from_texts(texts=text, embedding=self.embedding, metadatas=metadata)
         
         # 4. Initialize and bind LLM
         self.llm = ChatOllama(model="qwen3:4b", 
@@ -74,22 +80,15 @@ class AiAssistant:
         self.graph = StateGraph(AgentState)
         self._create_graph()
 
-    async def supervise_node(self,state:AgentState,config:RunnableConfig=None,**kwargs):
+    async def get_semantic_route(self,state:AgentState)-> str:
         """Determine which agent should handle the request"""
-        run_config = config or kwargs.get("runnable_config") or kwargs.get("config")
-        system_prompt = (
-            "You are a routing supervisor. Direct the user's request to the correct agent:\n"
-            "- 'rag_agent': For queries requiring lookups of specific internal documents, manuals, or database records.\n"
-            "- 'chat_agent': For casual greetings (e.g., 'hello'), general knowledge, or small talk.\n"
-            "- 'FINISH': If the user explicitly ends the conversation."
-        )
+        user_search = state['messages'][-1].content
 
-        messages = [SystemMessage(content=system_prompt)] + list(state["messages"])
-        try:
-            response = await self.supervise_llm.ainvoke(messages,config=run_config)
-            return {"next_agent":response.next}
-        except Exception as e:
-            return {"next_agent":"chat_agent"}
+        closest = self.semantic_router.similarity_search(user_search,k=1)
+        if closest:
+            chosen = closest[0].metadata['route']
+            return chosen
+        return 'chat_agent'
     
     async def chat_agent_node(self, state: AgentState, config: RunnableConfig= None, **kwargs):
         """Handle casual conversation without tool"""
@@ -127,10 +126,6 @@ class AiAssistant:
         self.vector_store.add_texts(texts)
         self.vector_store.save_local(self.index_path)
 
-    def route_for_supervisor(self,state:AgentState)-> str:
-        """Read decision from supervisor node"""
-        return state.get("next_agent","chat_agent")
-
     def should_continue_rag(self, state: AgentState) -> str:
         last_message = state['messages'][-1]
         if hasattr(last_message, 'tool_calls') and len(last_message.tool_calls) > 0:
@@ -157,17 +152,14 @@ class AiAssistant:
         return {'messages': results}
     
     def _create_graph(self):
-        self.graph.add_node("supervisor",self.supervise_node)
         self.graph.add_node("chat_agent",self.chat_agent_node)
         self.graph.add_node("rag_agent",self.rag_agent_node)
         self.graph.add_node("retriever_tool",self.tool_action)
 
-        self.graph.set_entry_point("supervisor")
-        self.graph.add_conditional_edges("supervisor",
-                                         self.route_for_supervisor,
+        self.graph.add_conditional_edges(START,
+                                         self.get_semantic_route,
                                          {"chat_agent":"chat_agent",
-                                          "rag_agent":"rag_agent",
-                                          "FINISH":END})
+                                          "rag_agent":"rag_agent"})
         
         self.graph.add_conditional_edges("rag_agent",
                                          self.should_continue_rag,
