@@ -67,9 +67,9 @@ class AiAssistant:
         self.semantic_router = FAISS.from_texts(texts=text, embedding=self.embedding, metadatas=metadata)
         
         # 4. Initialize and bind LLM
-        self.llm = ChatOllama(model="qwen3:4b", 
+        self.llm = ChatOllama(model="qwen2.5:3b", 
         temperature=0,      # Zero creativity for strict tool discipline
-        num_ctx=2048, base_url=ollama_url)
+        num_ctx=4096, base_url=ollama_url)
         self.llm_with_tools = self.llm.bind_tools(self.tools)
         self.supervise_llm = self.llm.with_structured_output(Router)
         self.db_conn = None
